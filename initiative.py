@@ -4,43 +4,51 @@ import pandas as pd
 import numpy as np
 
 x = """
-Features:
-- Initiative Tracker, which allows players to add their name and initiative
-  - highlights active row, or rotates the list as the round goes on
-  - could display extra data, like AC or HP
-- Graphs showing damage over time (burn down), could say who's expected to win at the moment
+Done:
++ auto-clear form fields
++ move init tracker to sidebar
++ add character cards
++ Track current turn (highlight row, or always make it the top)
++ Track rounds/ who's gone in the round, etc. (order by who's gone, then by initiative)
++ Make inititive table pretty
++ HP management
++ Add Character Cards
++ Initiative on sidebar
++ write character cards in columns
++ add HP bar - track max vs current, could have extra HP (temp?)
++ HP and AC tracker
++ highlight active turn
++ health percent can't be greater than 100% (enforce max health)
++ config file (dark theme)
++ tab header
 
 To do:
-- auto-clear form field, only add new data when both fields are present
-- allow edit/ update/ delete
+- PC data
+- reorg/ clean code
+- handle null/ empty inputs
+- move character data validations to dataclass (min/ max hp)
+- Allow updates to a character by adding them again
+- Don't use state when you don't need to
+- Add "combat" object to contain turn/round count and initiative order.
 
-New idea:
-Add Sidebar for initiative tracker, main page for character stats/ character card.
+
+Feature ideas:
+- better "edit"/ "update" options?
+- AC management
+- HP Burndown for each character
+- Predicted victory based on burndown rates
+- Predicted number of rounds left
+- Graph the burndown with victory and remaining rounds
+- Shared state across users
+- Scrape character info from character sheets (what about monsters or NPCs?) (from dndbeyond, or could download everyone's character sheets)
+- reaction tracker per round
+- status tracking?  concentration tracker?
+- Add other ability scores
+- temp hp
 
 
-0. Auto-clear form input, only add new character when both fields are present
-0.5. Update/ Delete character
-1. Track current turn (highlight row, or always make it the top)
-1.25. Track rounds/ who's gone in the round, etc. (order by who's gone, then by initiative)
-1.5. Make inititive table pretty
-2. HP management
-3. AC management
-4. HP Burndown for each character
-5. Predicted victory based on burndown rates
-6. Predicted number of rounds left
-7. Graph the burndown with victory and remaining rounds
-8. Add Character Cards
-9. Initiative on sidebar
-10. Shared state across users
-11. Scrape character info from character sheets (what about monsters or NPCs?) (from dndbeyond, or could download everyone's character sheets)
-
-* reaction tracker per round
-* status tracking?  concentration tracker?
-* add HP bar - track max vs current, could have extra HP (temp?)
-* Add other ability scores
-* input validation
-* write character cards in columns
-* temp hp / enforce maximum
+Questions:
+* what happens when form fields are empty and it's submitted?
 """
 
 # TODO: add minimum values here, instead of when writing data
@@ -70,16 +78,17 @@ def initialize():
     if 'round' not in st.session_state:
         st.session_state['round'] = 1
 
-
-st.markdown(
-    """
-    <style>
-        .stProgress > div > div > div > div {
-            background-image: linear-gradient(to left, #C10505, green, forestgreen);
-        }
-    </style>""",
-    unsafe_allow_html=True,
-)
+def set_styles():
+    st.set_page_config(page_title="Initiative Tracker", page_icon="🐉")
+    st.markdown(
+        """
+        <style>
+            .stProgress > div > div > div > div {
+                background-image: linear-gradient(to left, #C10505, green, forestgreen);
+            }
+        </style>""",
+        unsafe_allow_html=True,
+    )
 
 def render_char_card(character, parent=st):
     parent.subheader(character.name)
@@ -91,23 +100,64 @@ def render_char_card(character, parent=st):
     col2.metric(label='🛡️ AC', value=character.ac)
 
 
+def render_initiative_board(characters_list, parent=st.sidebar):
+    parent.caption("Round {0} - turn {1}".format(ss.round, ss.turn))
+    parent.title('Current Turn: {0}'.format(characters_list[ss.turn - 1].name))
+    parent.caption('On Deck: {0}'.format(characters_list[ss.turn % len(characters_list)].name))
+    parent.header('Turn Order')
+    df = pd.DataFrame(characters_list)[['name', 'initiative']]
+    # df.set_index('name', inplace=True) ## This sets name as the index, which removes the index column.
+    parent.write(
+            df.style.apply(lambda x: ['background-color: grey' 
+                                  if (x.name == ss.turn - 1)
+                                  else '' for i in x], axis=1)
+    )
+    if parent.button('Next Turn'):
+        if ss.turn == len(characters):
+            ss.round += 1
+            ss.turn = 1
+        else:
+            ss.turn = ss.turn + 1
+        st.experimental_rerun() # forces a rerun, or else the turn counter renders behind a turn.
+    parent.title('')
+    parent.title('')
+    with parent.form("remove", clear_on_submit=True):
+        name = st.selectbox("Character", ['--'] + list(characters.keys()))
+        if st.form_submit_button("Remove Character"):
+            if name != '--':
+                del characters[name]
+                st.experimental_rerun() # forces a rerun, so other components have the right characters
+
+
+def render_character_cards(characters_list):
+    cols = st.columns(2)
+    i = 0
+    for character in characters_list:
+        col = cols[i % 2]
+        render_char_card(character, col)
+        col.title('')
+        i += 1
+
+
+set_styles()
 initialize()
 
-characters = st.session_state.characters
+ss = st.session_state
+characters = ss.characters
 
 with st.form("new_character", clear_on_submit=True):
     name_col, init_col, hp_col, ac_col, submit_col = st.columns(5)
     name_col.text_input("Character", key="name")
-    init_col.text_input("Initiative", key="initiative")
-    hp_col.text_input("HP", key="hp")
-    ac_col.text_input("AC", key="ac")
+    init_col.number_input("Initiative", key="initiative", min_value=0)
+    hp_col.number_input("HP", key="hp", min_value=0, step=1)
+    ac_col.number_input("AC", key="ac", min_value=0, step=1)
     if submit_col.form_submit_button("Add"):
-        characters[st.session_state.name] = Character(
-                name=st.session_state.name, 
-                initiative=int(st.session_state.initiative),
-                ac=int(st.session_state.ac),
-                hp=int(st.session_state.hp),
-                max_hp=int(st.session_state.hp)
+        characters[ss.name] = Character(
+                name=ss.name,
+                initiative=ss.initiative,
+                ac=ss.ac,
+                hp=ss.hp,
+                max_hp=ss.hp
             )
 
 
@@ -116,58 +166,22 @@ with st.form("damage", clear_on_submit=True):
     amount = amount_col.number_input('', step=1, min_value=0)
     type = type_col.radio('', ['Damage', 'Heal', 'Total'])
     name = char_col.selectbox('', ['--'] + list(characters.keys()))
-    # Every form must have a submit button.
     submitted = st.form_submit_button("Ka-pow!")
     if submitted:
         if name != '--':
             char = characters[name]
+            # TODO: setting logic in dataclass.  Also min/max when setting Total
             if type == 'Total':
                 char.hp = amount
-            else:
-                multiplier = -1 if type == 'Damage' else 1
-                char.hp = max(char.hp + amount * multiplier, 0)
+            elif type == 'Damage':
+                char.hp = max(char.hp - amount, 0)
+            elif type == 'Heal':
+                char.hp = min(char.hp + amount, char.max_hp)
 
-
-# TODO: sidebar should show if there are no characters yet, with empty df.
 if len(characters) != 0:
-    st.sidebar.caption("Round {0} - turn {1}".format(st.session_state.round, st.session_state.turn))
     characters_list = list(characters.values())
     characters_list.sort(key=lambda char: char.initiative, reverse=True)
-    cols = st.columns(2)
-    i = 0
-    for character in characters_list:
-        col = cols[i % 2]
-        render_char_card(character, col)
-        col.title('')
-        i += 1
-    df = pd.DataFrame(characters_list)[['name', 'initiative']]
-    # df.set_index('name', inplace=True) ## This sets name as the index, which removes the index column.
-    st.sidebar.title('Current Turn: {0}'.format(characters_list[st.session_state.turn - 1].name))
-    st.sidebar.caption('On Deck: {0}'.format(characters_list[st.session_state.turn % len(characters_list)].name))
-    st.sidebar.header('Turn Order')
-    st.sidebar.write(
-            df.style.apply(lambda x: ['background-color: grey' 
-                                  if (x.name == st.session_state.turn - 1)
-                                  else '' for i in x], axis=1)
-    )
-    button = st.sidebar.button('Next Turn')
-    if button:
-        if st.session_state.turn == len(characters):
-            st.session_state.round += 1
-            st.session_state.turn = 1
-        else:
-            st.session_state.turn = st.session_state.turn + 1
-        st.experimental_rerun() # forces a rerun, or else the turn counter renders behind a turn.
-
-    st.sidebar.title('')
-    st.sidebar.title('')
-
-    with st.sidebar.form("remove", clear_on_submit=True):
-        name = st.selectbox("Character", ['--'] + list(characters.keys()))
-        if st.form_submit_button("Remove Character"):
-            if name != '--':
-                del characters[name]
-                st.experimental_rerun() # forces a rerun, so other components have the right characters
-
+    render_initiative_board(characters_list)
+    render_character_cards(characters_list)
 else:
     st.sidebar.caption("Add characters to view turn order.")

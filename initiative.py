@@ -166,7 +166,7 @@ def new_character_form():
         name_col, init_col, hp_col, ac_col, submit_col = st.columns(5)
         name = name_col.text_input("Character", key="name")
         init = init_col.number_input("Initiative", key="initiative", min_value=0)
-        hp = hp_col.number_input("HP", key="hp", min_value=0, step=1)
+        hp = hp_col.number_input("Max HP", key="hp", min_value=0, step=1)
         ac = ac_col.number_input("AC", key="ac", min_value=0, step=1)
         if submit_col.form_submit_button("Add"):
             ss.characters[name] = Character(
